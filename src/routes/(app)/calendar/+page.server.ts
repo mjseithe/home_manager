@@ -44,11 +44,14 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	const events = visibleCalendarIds.length
 		? await db.query.calendarEvents.findMany({
+				// Overlap test, not "starts within range": a multi-day event
+				// that started before rangeStart but is still ongoing (endAt
+				// falls inside/after the range) needs to show up too.
 				where: (ce, { inArray, and, gte, lte }) =>
 					and(
 						inArray(ce.calendarId, visibleCalendarIds),
-						gte(ce.startAt, rangeStart),
-						lte(ce.startAt, rangeEnd)
+						lte(ce.startAt, rangeEnd),
+						gte(ce.endAt, rangeStart)
 					),
 				with: { calendar: { with: { account: { with: { familyMember: true } } } } },
 				orderBy: (ce, { asc }) => asc(ce.startAt)

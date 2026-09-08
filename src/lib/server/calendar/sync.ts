@@ -6,6 +6,18 @@ import { listGoogleCalendars, listGoogleEvents } from '$lib/server/google/calend
 const SYNC_PAST_DAYS = 1;
 const SYNC_FUTURE_DAYS = 60;
 
+// Google returns all-day event boundaries as bare "YYYY-MM-DD" strings with
+// no timezone. `new Date("2026-09-14")` parses that as UTC midnight, which
+// in any timezone behind UTC (all of the US) lands on the *previous* local
+// day — a multi-day event starting Sept 14 would render as starting Sept
+// 13. Parse date-only strings as local-midnight instead; timed events keep
+// using their real offset via the normal Date constructor.
+function parseGoogleDate(value: string, isDateOnly: boolean): Date {
+	if (!isDateOnly) return new Date(value);
+	const [year, month, day] = value.split('-').map(Number);
+	return new Date(year, month - 1, day);
+}
+
 export async function syncAccountCalendarList(accountId: string) {
 	const account = await db.query.calendarAccounts.findFirst({
 		where: eq(calendarAccounts.id, accountId)
@@ -76,18 +88,30 @@ export async function syncAccountEvents(accountId: string) {
 			const end = event.end?.dateTime ?? event.end?.date;
 			if (!start || !end) continue;
 
-			await db.insert(calendarEvents).values({
+			const values = {
 				calendarId: cal.id,
 				googleEventId: event.id,
 				title: event.summary ?? '(no title)',
 				description: event.description ?? null,
 				location: event.location ?? null,
-				startAt: new Date(start),
-				endAt: new Date(end),
+				startAt: parseGoogleDate(start, !event.start?.dateTime),
+				endAt: parseGoogleDate(end, !event.end?.dateTime),
 				allDay: !event.start?.dateTime,
 				status: event.status ?? 'confirmed',
 				updatedAt: event.updated ? new Date(event.updated) : new Date()
-			});
+			};
+
+			// Upsert instead of plain insert: defense in depth in case two
+			// syncs for the same account still race despite the lock in
+			// syncAccountFull below, so a duplicate never surfaces as an
+			// unhandled unique-constraint error.
+			await db
+				.insert(calendarEvents)
+				.values(values)
+				.onConflictDoUpdate({
+					target: [calendarEvents.calendarId, calendarEvents.googleEventId],
+					set: values
+				});
 		}
 	}
 
@@ -97,9 +121,23 @@ export async function syncAccountEvents(accountId: string) {
 		.where(eq(calendarAccounts.id, account.id));
 }
 
+// Guards against overlapping syncs of the same account. Without this, the
+// 15-min cron job, the post-OAuth-connect sync, and a manual "Sync now"
+// click can all race: two concurrent delete-then-reinsert passes over the
+// same calendar collide on the (calendarId, googleEventId) unique
+// constraint, and the sync fails silently (errors are swallowed in
+// syncAllAccounts so the UI shows no feedback).
+const accountsInFlight = new Set<string>();
+
 export async function syncAccountFull(accountId: string) {
-	await syncAccountCalendarList(accountId);
-	await syncAccountEvents(accountId);
+	if (accountsInFlight.has(accountId)) return;
+	accountsInFlight.add(accountId);
+	try {
+		await syncAccountCalendarList(accountId);
+		await syncAccountEvents(accountId);
+	} finally {
+		accountsInFlight.delete(accountId);
+	}
 }
 
 export async function syncAllAccounts() {

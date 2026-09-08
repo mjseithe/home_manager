@@ -16,14 +16,36 @@
 
 	const anchor = $derived(new Date(data.anchor));
 
+	// Multi-day all-day events (e.g. a 3-day trip) should appear on every day
+	// they span, not just their start day. Google's end date is exclusive
+	// (the day after the last actual day), so we walk [startAt, endAt).
+	// Timed events still only ever belong to their single start day.
+	function dayKeysFor(event: { startAt: string | Date; endAt: string | Date; allDay: boolean }) {
+		const start = new Date(event.startAt);
+		if (!event.allDay) return [start.toDateString()];
+
+		const end = new Date(event.endAt);
+		const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+		const endCursor = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+		const keys: string[] = [];
+		while (cursor < endCursor) {
+			keys.push(cursor.toDateString());
+			cursor.setDate(cursor.getDate() + 1);
+		}
+		return keys.length ? keys : [start.toDateString()];
+	}
+
 	const eventsByDay = $derived.by(() => {
 		const map = new Map<string, typeof data.events>();
 		for (const event of data.events) {
-			const key = new Date(event.startAt).toDateString();
-			if (!map.has(key)) map.set(key, []);
-			map.get(key)!.push(event);
+			for (const key of dayKeysFor(event)) {
+				if (!map.has(key)) map.set(key, []);
+				map.get(key)!.push(event);
+			}
 		}
-		return [...map.entries()];
+		return [...map.entries()].sort(
+			([a], [b]) => new Date(a).getTime() - new Date(b).getTime()
+		);
 	});
 
 	const monthGrid = $derived.by(() => {
@@ -39,7 +61,8 @@
 	});
 
 	function eventsOnDay(day: Date) {
-		return data.events.filter((e) => new Date(e.startAt).toDateString() === day.toDateString());
+		const key = day.toDateString();
+		return data.events.filter((e) => dayKeysFor(e).includes(key));
 	}
 
 	function navUrl(overrides: { view?: 'agenda' | 'month'; date?: string }) {

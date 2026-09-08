@@ -29,11 +29,14 @@ export const load: PageServerLoad = async () => {
 
 	const todaysEvents = enabledCalendarIds.length
 		? await db.query.calendarEvents.findMany({
+				// Overlap test, not "starts today": a multi-day event that
+				// started yesterday (or earlier) but is still ongoing should
+				// still show up on today's dashboard.
 				where: (ce, { inArray, and, gte, lte }) =>
 					and(
 						inArray(ce.calendarId, enabledCalendarIds),
-						gte(ce.startAt, rangeStart),
-						lte(ce.startAt, rangeEnd)
+						lte(ce.startAt, rangeEnd),
+						gte(ce.endAt, rangeStart)
 					),
 				with: { calendar: { with: { account: { with: { familyMember: true } } } } },
 				orderBy: (ce, { asc }) => asc(ce.startAt)
