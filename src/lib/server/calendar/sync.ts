@@ -12,7 +12,7 @@ const SYNC_FUTURE_DAYS = 60;
 // day — a multi-day event starting Sept 14 would render as starting Sept
 // 13. Parse date-only strings as local-midnight instead; timed events keep
 // using their real offset via the normal Date constructor.
-function parseGoogleDate(value: string, isDateOnly: boolean): Date {
+export function parseGoogleDate(value: string, isDateOnly: boolean): Date {
 	if (!isDateOnly) return new Date(value);
 	const [year, month, day] = value.split('-').map(Number);
 	return new Date(year, month - 1, day);
@@ -68,6 +68,9 @@ export async function syncAccountEvents(accountId: string) {
 	const timeMax = new Date(Date.now() + SYNC_FUTURE_DAYS * 86_400_000);
 
 	for (const cal of enabledCalendars) {
+		// Google-backed calendars always have this set; only local-only
+		// calendars (which never appear here — they have no accountId) don't.
+		if (!cal.googleCalendarId) continue;
 		const events = await listGoogleEvents(account, cal.googleCalendarId, timeMin, timeMax);
 
 		// Full replace of the sync window: simplest correct way to reflect

@@ -1,6 +1,7 @@
 import { and, eq, gte, lte } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { calendarEvents, eventReminderLog, reminderRules } from '$lib/server/db/schema';
+import { calendarOwner } from '$lib/calendar-layout';
 import { sendReminderEmail } from './mailer';
 
 // Should be >= the cron interval that calls processReminders, so no event's
@@ -21,11 +22,13 @@ export async function processReminders() {
 
 		const events = await db.query.calendarEvents.findMany({
 			where: and(gte(calendarEvents.startAt, windowStart), lte(calendarEvents.startAt, windowEnd)),
-			with: { calendar: { with: { account: { with: { familyMember: true } } } } }
+			with: {
+				calendar: { with: { account: { with: { familyMember: true } }, familyMember: true } }
+			}
 		});
 
 		for (const event of events) {
-			const owner = event.calendar.account.familyMember;
+			const owner = calendarOwner(event.calendar);
 			if (rule.familyMemberId && rule.familyMemberId !== owner.id) continue;
 			if (!owner.email) continue;
 

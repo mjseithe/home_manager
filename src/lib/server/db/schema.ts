@@ -58,10 +58,16 @@ export const calendarAccountsRelations = relations(calendarAccounts, ({ one, man
 
 export const calendars = sqliteTable('calendars', {
 	id: id(),
-	accountId: text('account_id')
-		.notNull()
-		.references(() => calendarAccounts.id, { onDelete: 'cascade' }),
-	googleCalendarId: text('google_calendar_id').notNull(),
+	// null for local-only calendars (no connected Google account) — see familyMemberId below
+	accountId: text('account_id').references(() => calendarAccounts.id, { onDelete: 'cascade' }),
+	// only set for local-only calendars, so we know whose personal calendar this is
+	// without going through an account. Google-backed calendars get their owner via
+	// account.familyMember instead.
+	familyMemberId: text('family_member_id').references(() => familyMembers.id, {
+		onDelete: 'cascade'
+	}),
+	isLocal: integer('is_local', { mode: 'boolean' }).notNull().default(false),
+	googleCalendarId: text('google_calendar_id'),
 	summary: text('summary').notNull(),
 	colorHex: text('color_hex'),
 	enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true)
@@ -71,6 +77,10 @@ export const calendarsRelations = relations(calendars, ({ one, many }) => ({
 	account: one(calendarAccounts, {
 		fields: [calendars.accountId],
 		references: [calendarAccounts.id]
+	}),
+	familyMember: one(familyMembers, {
+		fields: [calendars.familyMemberId],
+		references: [familyMembers.id]
 	}),
 	events: many(calendarEvents)
 }));
@@ -82,7 +92,9 @@ export const calendarEvents = sqliteTable(
 		calendarId: text('calendar_id')
 			.notNull()
 			.references(() => calendars.id, { onDelete: 'cascade' }),
-		googleEventId: text('google_event_id').notNull(),
+		// null for events created locally that haven't been (or will never be) pushed
+		// to Google — i.e. anything on a local-only calendar
+		googleEventId: text('google_event_id'),
 		title: text('title').notNull(),
 		description: text('description'),
 		location: text('location'),

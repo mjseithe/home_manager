@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageProps } from './$types';
+	import { calendarOwner } from '$lib/calendar-layout';
 
 	let { data }: PageProps = $props();
 
@@ -37,7 +38,7 @@
 				<div class="flex items-center gap-2">
 					<span
 						class="h-2.5 w-2.5 shrink-0 rounded-full"
-						style="background-color: {event.calendar.account.familyMember.colorHex}"
+						style="background-color: {calendarOwner(event.calendar).colorHex}"
 					></span>
 					<span class="w-16 shrink-0 text-sm text-slate-500">
 						{event.allDay ? 'All day' : timeFmt.format(new Date(event.startAt))}

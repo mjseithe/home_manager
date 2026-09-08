@@ -38,7 +38,9 @@ export const load: PageServerLoad = async () => {
 						lte(ce.startAt, rangeEnd),
 						gte(ce.endAt, rangeStart)
 					),
-				with: { calendar: { with: { account: { with: { familyMember: true } } } } },
+				with: {
+					calendar: { with: { account: { with: { familyMember: true } }, familyMember: true } }
+				},
 				orderBy: (ce, { asc }) => asc(ce.startAt)
 			})
 		: [];

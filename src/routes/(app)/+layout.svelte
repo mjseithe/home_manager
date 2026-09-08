@@ -13,7 +13,7 @@
 	];
 </script>
 
-<div class="flex min-h-screen flex-col bg-slate-100">
+<div class="flex h-screen flex-col bg-slate-100">
 	<header
 		class="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3 shadow-sm"
 	>

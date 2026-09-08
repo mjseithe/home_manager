@@ -2,6 +2,7 @@ import { google, type calendar_v3 } from 'googleapis';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { calendarAccounts, type CalendarAccount } from '$lib/server/db/schema';
+import { toLocalDateParam } from '$lib/calendar-layout';
 import { createOAuthClient } from './oauth';
 
 function getClientForAccount(account: CalendarAccount) {
@@ -33,6 +34,80 @@ export async function listGoogleCalendars(account: CalendarAccount) {
 	const cal = google.calendar({ version: 'v3', auth: client });
 	const { data } = await cal.calendarList.list();
 	return data.items ?? [];
+}
+
+export interface GoogleEventInput {
+	title: string;
+	description: string | null;
+	location: string | null;
+	startAt: Date;
+	endAt: Date;
+	allDay: boolean;
+}
+
+// Google's all-day date is local-calendar-day text with an *exclusive* end
+// (the day after the last actual day) — the same convention already used by
+// sync.ts/calendar-layout.ts when reading events back, so an app-created
+// all-day event round-trips through Google without drifting a day.
+function toGoogleEventBody(input: GoogleEventInput): calendar_v3.Schema$Event {
+	return {
+		summary: input.title,
+		description: input.description ?? undefined,
+		location: input.location ?? undefined,
+		start: input.allDay
+			? { date: toLocalDateParam(input.startAt) }
+			: { dateTime: input.startAt.toISOString() },
+		end: input.allDay
+			? { date: toLocalDateParam(input.endAt) }
+			: { dateTime: input.endAt.toISOString() }
+	};
+}
+
+export async function insertGoogleEvent(
+	account: CalendarAccount,
+	googleCalendarId: string,
+	input: GoogleEventInput
+) {
+	const client = getClientForAccount(account);
+	const cal = google.calendar({ version: 'v3', auth: client });
+	const { data } = await cal.events.insert({
+		calendarId: googleCalendarId,
+		requestBody: toGoogleEventBody(input)
+	});
+	return data;
+}
+
+export async function updateGoogleEvent(
+	account: CalendarAccount,
+	googleCalendarId: string,
+	googleEventId: string,
+	input: GoogleEventInput
+) {
+	const client = getClientForAccount(account);
+	const cal = google.calendar({ version: 'v3', auth: client });
+	const { data } = await cal.events.update({
+		calendarId: googleCalendarId,
+		eventId: googleEventId,
+		requestBody: toGoogleEventBody(input)
+	});
+	return data;
+}
+
+export async function deleteGoogleEvent(
+	account: CalendarAccount,
+	googleCalendarId: string,
+	googleEventId: string
+) {
+	const client = getClientForAccount(account);
+	const cal = google.calendar({ version: 'v3', auth: client });
+	try {
+		await cal.events.delete({ calendarId: googleCalendarId, eventId: googleEventId });
+	} catch (err) {
+		// 404/410 means it's already gone on Google's side (e.g. deleted there
+		// directly) — that's the desired end state, not a failure.
+		const status = (err as { code?: number; status?: number })?.code ?? undefined;
+		if (status !== 404 && status !== 410) throw err;
+	}
 }
 
 export async function listGoogleEvents(

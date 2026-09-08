@@ -2,7 +2,9 @@ import { google } from 'googleapis';
 import { env } from '$env/dynamic/private';
 
 export const GOOGLE_SCOPES = [
-	'https://www.googleapis.com/auth/calendar.readonly',
+	// Read-write: creating/editing/deleting events from the app needs to push
+	// back to Google, not just pull. calendar.readonly is no longer enough.
+	'https://www.googleapis.com/auth/calendar',
 	'https://www.googleapis.com/auth/userinfo.email'
 ];
 
